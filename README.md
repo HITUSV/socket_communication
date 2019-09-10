@@ -64,6 +64,8 @@ void test_callback2(const TestMsg* data){
 其中data为接收到的数据，b为额外参数，额外参数可以是任意数据类型，通过完美转发实现参数的内存安全
 一个数据头可以对应多个回调函数，按设定回调函数的先后顺序进行调用
 
+#### 回调函数类
+callback_function.h定义对象CallBackFunction， CallBackFunction继承自CallBackFunctionInterface, 实现了对回调函数的封装
 
 ### 示例
 ```cpp
