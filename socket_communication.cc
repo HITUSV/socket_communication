@@ -237,7 +237,7 @@ namespace socket_communication{
             shutdown(*client_socket_ptr_, SHUT_RDWR);
             delete client_socket_ptr_;
             client_socket_ptr_ = nullptr;
-            SignalCall(kSocketAbnormalDisconnection);
+            SignalCall(kSocketClose);
         }
         is_open_ = false;
     }

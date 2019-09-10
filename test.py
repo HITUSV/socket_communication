@@ -2,21 +2,8 @@ import socket
 import threading
 import time
 import json
-from json import JSONDecodeError
 
-kHandShake1 = 1
-kHandShake2 = 2
-kHandShake3 = 3
-kNormalData = 4
-client_num = 0
-client_id_list = []
-user_id_list = []
-SocketErrorType = []
-kErrorFree = 0
-kMissHandShake = 1
 SOCKET_SIZE = 2048
-SocketErrorType.append(kErrorFree)
-SocketErrorType.append(kMissHandShake)
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 client_socket = {}
@@ -69,4 +56,3 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         sock.shutdown(socket.SHUT_RDWR)
         s.shutdown(socket.SHUT_RDWR)
-        client_id_list.clear()
