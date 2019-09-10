@@ -1,0 +1,6 @@
+.idea/
+cmake-build-debug/
+build/
+*.key
+*.dat
+config.h
