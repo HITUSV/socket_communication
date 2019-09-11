@@ -42,8 +42,8 @@ namespace socket_communication{
         is_sending_ = false;
         offline_reconnection_ = false;
         memset(rx_buffer_,'\0', SOCKET_SIZE);
-        memset(tx_buffer_, '\0', SOCKET_SIZE);
         receive_thread_ = false;
+        send_thread_queue_ = new std::queue<std::thread::id>;
     }
 
     SocketCommunication::SocketCommunication(const std::string &host, uint16_t port) {
@@ -53,10 +53,10 @@ namespace socket_communication{
         is_sending_ = false;
         offline_reconnection_ = false;
         memset(rx_buffer_,'\0', SOCKET_SIZE);
-        memset(tx_buffer_, '\0', SOCKET_SIZE);
         host_ = host;
         port_ = port;
         receive_thread_ = false;
+        send_thread_queue_ = new std::queue<std::thread::id>;
     }
 
     SocketCommunication::~SocketCommunication() {
@@ -72,6 +72,7 @@ namespace socket_communication{
         }
         callback_function_list_.clear();
         signal_function_list_.clear();
+        delete send_thread_queue_;
         Close();
     }
 
@@ -170,6 +171,7 @@ namespace socket_communication{
             std::cerr<<"Failed to set socket timeout"<<std::endl;
         }
         is_open_ = true;
+        return true;
     }
 
     void SocketCommunication::SetHost(const std::string& host) {

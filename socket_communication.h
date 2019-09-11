@@ -37,6 +37,7 @@
 #include <cerrno>
 #include <netdb.h>
 #include <vector>
+#include <queue>
 #include "callback_function.h"
 
 #ifdef USE_GLOG
@@ -208,9 +209,9 @@ namespace socket_communication {
         volatile bool offline_reconnection_;
         volatile bool receive_thread_;
         uint8_t rx_buffer_[SOCKET_SIZE];
-        uint8_t tx_buffer_[SOCKET_SIZE];
         std::map<uint8_t, std::vector<CallbackPair<const uint8_t*>*>> callback_function_list_;
         std::map<SocketSignal, std::vector<CallbackPair<>*>> signal_function_list_;
+        std::queue<std::thread::id>* send_thread_queue_;
     };
 
     template<typename callable, typename D, typename... A>
@@ -255,13 +256,16 @@ namespace socket_communication {
             json q = s_t;
             string_send = q.dump();
             str_send = (const uint8_t *)string_send.c_str();
-            while(is_sending_){
+            std::thread::id this_id = std::this_thread::get_id();
+            send_thread_queue_->push(this_id);
+            while(is_sending_ || this_id != send_thread_queue_->front()){
                 std::this_thread::sleep_for(std::chrono:: microseconds (500));
             }
             is_sending_ = true;
             char temp;
             temp = write(*client_socket_ptr_, str_send, strlen((const char*)str_send));
             is_sending_ = false;
+            send_thread_queue_->pop();
         } else{
             std::cerr<<"Failed to send data, socket has closed"<<std::endl;
         }

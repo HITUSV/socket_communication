@@ -3,6 +3,7 @@
 //
 
 #include "socket_communication.h"
+#include <sys/syscall.h>
 
 typedef enum SocketHeader{
     kTestMsg = 1,
@@ -73,7 +74,7 @@ int main(int argc, char* argv[]){
 
     ///发送数据 a，数据头 1
     s.SendData(a, 1);
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
 
     ///关闭接收线程
     s.CloseSocketReceiveThread();

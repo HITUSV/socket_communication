@@ -4,8 +4,9 @@
 2. 支持回调函数
 3. 单个数据可对应多个回调函数
 4. 自定义额外回调参数
-3. 数据json封装
-4. socket异常时调用对应的回调函数
+5. 数据json封装
+6. socket异常时调用对应的回调函数
+7. 线程安全，支持多线程发送
 
 ### 依赖
 - [nlohmann/json](https://github.com/nlohmann/json "nlohmann/json")  高性能的现代C++ json库
