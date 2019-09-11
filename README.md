@@ -7,6 +7,7 @@
 5. 数据json封装
 6. socket异常时调用对应的回调函数
 7. 线程安全，支持多线程发送
+8. 接收回调函数并发执行
 
 ### 依赖
 - [nlohmann/json](https://github.com/nlohmann/json "nlohmann/json")  高性能的现代C++ json库
@@ -63,7 +64,7 @@ void test_callback2(const TestMsg* data){
 
 ```
 其中data为接收到的数据，b为额外参数，额外参数可以是任意数据类型，通过完美转发实现参数的内存安全
-一个数据头可以对应多个回调函数，按设定回调函数的先后顺序进行调用
+一个数据头可以对应多个回调函数，回调函数并发调用
 
 #### 回调函数类
 callback_function.h定义对象CallBackFunction， CallBackFunction继承自CallBackFunctionInterface, 实现了对回调函数的封装

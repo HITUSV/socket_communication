@@ -77,12 +77,19 @@ namespace socket_communication{
     }
 
     void SocketCommunication::Call(const uint8_t* buffer, uint8_t header){
+        std::string data_string = (const char*)buffer;
         auto f = callback_function_list_.find(header);
         if(f==callback_function_list_.end()){
             return;
         }
         for (auto& iter: callback_function_list_[header]) {
-            (*(iter->task))(buffer);
+//            (*(iter->task))(data_string);
+            const std::function<void(std::string)>* task;
+            task  = iter->task;
+            std::thread callback_thread([task, data_string](){
+                (*task)(data_string);
+            });
+            callback_thread.detach();
         }
     }
 

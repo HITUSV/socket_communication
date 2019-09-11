@@ -67,18 +67,19 @@ namespace socket_communication {
 
     template<typename D, typename C>
     class SocketCallBackFunction:public CallBackFunction<D, C>{
-        virtual void Conversion(const C* c, D* d){
-            std::string string_rec = (const char*)c;
+        virtual bool Conversion(const C* c, D* d){
+            //std::string string_rec = (const char*)c;
+//            std::cout<<"cov: "<<*c<<std::endl;
             json j;
             try {
-                j = json::parse(string_rec);
+                j = json::parse(*c);
             }
             catch (nlohmann::detail::parse_error& e) {
 #ifdef USE_GLOG
                 LOG(ERROR)<<"Dara parse error, data: "<<string_rec<<std::endl;
 #endif
-                std::cerr<<"Dara parse error, data: "<<string_rec<<std::endl;
-                return;
+                std::cerr<<"Data parse error, data: "<<*c<<std::endl;
+                return false;
             }
             try {
                 *d = j;
@@ -87,9 +88,10 @@ namespace socket_communication {
 #ifdef USE_GLOG
                 LOG(ERROR)<<"Dara parse error, data: "<<string_rec<<std::endl;
 #endif
-                std::cerr<<"Dara parse error, data: "<<string_rec<<std::endl;
-                return;
+                std::cerr<<"Data parse error, data: "<<*c<<std::endl;
+                return false;
             }
+            return true;
         }
     };
 
@@ -209,19 +211,19 @@ namespace socket_communication {
         volatile bool offline_reconnection_;
         volatile bool receive_thread_;
         uint8_t rx_buffer_[SOCKET_SIZE];
-        std::map<uint8_t, std::vector<CallbackPair<const uint8_t*>*>> callback_function_list_;
+        std::map<uint8_t, std::vector<CallbackPair<std::string>*>> callback_function_list_;
         std::map<SocketSignal, std::vector<CallbackPair<>*>> signal_function_list_;
         std::queue<std::thread::id>* send_thread_queue_;
     };
 
     template<typename callable, typename D, typename... A>
     void SocketCommunication::SetCallBackFunction(callable&& fun, uint8_t header, A&&... arg) {
-        std::shared_ptr<SocketCallBackFunction<D, uint8_t>>
-        c(new SocketCallBackFunction<D, uint8_t>);
-        auto* c_p = new CallbackPair<const uint8_t* >(c, c->SetFunction(std::forward<callable>(fun), std::forward<A>(arg)...));
+        std::shared_ptr<SocketCallBackFunction<D, std::string>>
+        c(new SocketCallBackFunction<D, std::string>);
+        auto* c_p = new CallbackPair<std::string >(c, c->SetFunction(std::forward<callable>(fun), std::forward<A>(arg)...));
         auto iter = callback_function_list_.find(header);
         if(iter == callback_function_list_.end()){
-            std::vector<CallbackPair<const uint8_t* >*> v;
+            std::vector<CallbackPair<std::string >*> v;
             callback_function_list_[header] = v;
         }
         callback_function_list_[header].push_back(c_p);

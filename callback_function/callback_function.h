@@ -37,15 +37,17 @@ class CallBackFunction:public CallBackFunctionInterface{
 public:
     CallBackFunction()= default;
     ~CallBackFunction()= default;
-    virtual void Conversion(const C* c, D* d){
+    virtual bool Conversion(const C* c, D* d){
         memcpy(d, c, sizeof(D));
     };
     template <typename callable, typename ...A>
-    const std::function<void(const C*)>* SetFunction(callable&& fun, A&&... arg) {
+    const std::function<void(C)>* SetFunction(callable&& fun, A&&... arg) {
         task_ = std::bind(std::forward<callable>(fun), std::placeholders::_1, std::forward<A>(arg)...);
-        public_task_ = std::bind([this](const C* buffer){
+        public_task_ = std::bind([this](C buffer){
             D data;
-            Conversion(buffer, &data);
+            if(!Conversion(&buffer, &data)){
+                return;
+            };
             task_(&data);}
             , std::placeholders::_1);
         return &public_task_;
@@ -53,7 +55,7 @@ public:
 
 private:
     std::function<void(const D*)> task_;
-    std::function<void(const C*)> public_task_;
+    std::function<void(C)> public_task_;
 };
 
 template <typename... C>
