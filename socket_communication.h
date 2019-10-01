@@ -54,6 +54,7 @@ namespace socket_communication {
      * Socket收发数据结构体
      */
     typedef struct SocketTransmission {
+        uint16_t socket_header;
         uint8_t header;
         int64_t time_stamp;
         std::string data;
@@ -100,9 +101,9 @@ class SocketException:public std::exception{
             }
             catch (nlohmann::detail::parse_error &e) {
 #ifdef USE_GLOG
-                LOG(ERROR)<<"Dara parse error, data: "<<string_rec<<std::endl;
+                LOG(ERROR)<<"[socket] Data parse error, data: "<<string_rec<<std::endl;
 #endif
-                std::cerr << "Data parse error, data: " << *c << std::endl;
+                std::cerr << "[socket] Data parse error, data: " << *c << std::endl;
                 return false;
             }
             try {
@@ -110,9 +111,9 @@ class SocketException:public std::exception{
             }
             catch (nlohmann::detail::type_error &e) {
 #ifdef USE_GLOG
-                LOG(ERROR)<<"Dara parse error, data: "<<string_rec<<std::endl;
+                LOG(ERROR)<<"[socket] Data parse error, data: "<<string_rec<<std::endl;
 #endif
-                std::cerr << "Data parse error, data: " << *c << std::endl;
+                std::cerr << "[socket] Data parse error, data: " << *c << std::endl;
                 return false;
             }
             return true;
@@ -120,6 +121,10 @@ class SocketException:public std::exception{
     };
 
     class SocketCommunication {
+    public:
+        enum SocketHeader{
+            kData = 1
+        };
     public:
         SocketCommunication();
 
@@ -196,6 +201,11 @@ class SocketException:public std::exception{
         */
         template<typename T>
         void SendData(const T &data, uint8_t header);
+
+
+        template <typename T>
+        friend SocketCommunication& operator<<(SocketCommunication& sock,
+                                                const T& data);
 
         /**
          设置主机
@@ -289,6 +299,7 @@ class SocketException:public std::exception{
             string_data = j.dump();
             s_t.data = string_data;
             s_t.header = header;
+            s_t.socket_header = kData;
             auto timeNow = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch());
             s_t.time_stamp = timeNow.count();
@@ -303,10 +314,11 @@ class SocketException:public std::exception{
             is_sending_ = true;
             char temp;
             temp = write(*client_socket_ptr_, str_send, strlen((const char *) str_send));
+            //std::this_thread::sleep_for(std::chrono::microseconds(1));
             is_sending_ = false;
             send_thread_queue_->pop();
         } else {
-            std::cerr << "Failed to send data, socket has closed" << std::endl;
+            std::cerr << "[socket] Failed to send data, socket has closed" << std::endl;
         }
     };
 

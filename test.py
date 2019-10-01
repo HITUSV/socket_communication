@@ -21,9 +21,15 @@ while True:
 s.listen(20)
 
 
+def data_parse(data):
+    socket_data = json.loads(data)
+    normal_data = json.loads(socket_data['data'])
+    return normal_data
+
+
 def data_encapsulation(data, header):
     data_str = json.dumps(data)
-    data_send = {'header': header, 'time_stamp': int(1000*time.time()),
+    data_send = {'socket_header': 1, 'header': header, 'time_stamp': int(1000*time.time()),
                  'data': data_str}
     data_send_str = json.dumps(data_send)
     return data_send_str.encode('utf-8')
@@ -40,7 +46,8 @@ def tcp_link(sock, addr):
             break
         data = str(data, 'utf-8')
         print(data)
-        return_data = {"a": 1, "b": 2}
+        return_data = data_parse(data)
+        print(return_data)
         send_str = data_encapsulation(return_data, 1)
         sock.send(send_str)
     print('Close connection from %s:%s...' % addr)

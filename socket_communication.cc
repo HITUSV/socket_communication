@@ -24,12 +24,14 @@
 
 namespace socket_communication {
     void to_json(json &j, const SocketTransmission &socketTransmission) {
-        j = json{{"header",     socketTransmission.header},
+        j = json{{"socket_header",     socketTransmission.socket_header},
+                 {"header",     socketTransmission.header},
                  {"data",       socketTransmission.data},
                  {"time_stamp", socketTransmission.time_stamp}};
     }
 
     void from_json(const json &j, SocketTransmission &socketTransmission) {
+        socketTransmission.socket_header = j.at("socket_header").get<uint16_t>();
         socketTransmission.header = j.at("header").get<uint8_t>();
         socketTransmission.data = j.at("data").get<std::string>();
         socketTransmission.time_stamp = j.at("time_stamp").get<uint64_t>();
@@ -281,9 +283,9 @@ namespace socket_communication {
         }
         catch (nlohmann::detail::parse_error &e) {
 #ifdef USE_GLOG
-            LOG(ERROR)<<"Dara parse error, data: "<<data_receive<<std::endl;
+            LOG(ERROR)<<"[socket] Data parse error, data: "<<data_receive<<std::endl;
 #endif
-            std::cerr << "Dara parse error, da    ta: " << data_receive << std::endl;
+            std::cerr << "[socket] Data parse error, data: " << data_receive << std::endl;
             return;
         }
         SocketTransmission s_t;
@@ -292,11 +294,18 @@ namespace socket_communication {
         }
         catch (nlohmann::detail::type_error &e) {
 #ifdef USE_GLOG
-            LOG(ERROR)<<"Dara parse error, data: "<<data_receive<<std::endl;
+            LOG(ERROR)<<"[socket] Data parse error, data: "<<data_receive<<std::endl;
 #endif
-            std::cerr << "Dara parse error, data: " << data_receive << std::endl;
+            std::cerr << "[socket] Data parse error, data: " << data_receive << std::endl;
             return;
         }
-        Call((uint8_t *) s_t.data.c_str(), s_t.header);
+        if(s_t.socket_header==kData){
+            Call((uint8_t *) s_t.data.c_str(), s_t.header);
+        }
+    }
+
+    template<typename T>
+    SocketCommunication &operator<<(SocketCommunication &sock, const T &data) {
+        return sock;
     }
 }
