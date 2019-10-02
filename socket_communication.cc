@@ -38,27 +38,30 @@ namespace socket_communication {
     }
 
     SocketCommunication::SocketCommunication() {
-        client_socket_ptr_ = nullptr;
         socket_thread_ = false;
-        is_open_ = false;
+        is_connected_ = false;
         is_sending_ = false;
         offline_reconnection_ = false;
-        memset(rx_buffer_, '\0', SOCKET_SIZE);
-        receive_thread_ = false;
+//        rx_buffer_ = new uint8_t[SOCKET_SIZE];
+//        memset(rx_buffer_, '\0', SOCKET_SIZE);
+        socket_thread_is_running_ = false;
         send_thread_queue_ = new std::queue<std::thread::id>;
+        port_ = 0;
+        receive_thread_id_ = nullptr;
     }
 
+
     SocketCommunication::SocketCommunication(const std::string &host, uint16_t port) {
-        client_socket_ptr_ = nullptr;
         socket_thread_ = false;
-        is_open_ = false;
+        is_connected_ = false;
         is_sending_ = false;
         offline_reconnection_ = false;
-        memset(rx_buffer_, '\0', SOCKET_SIZE);
+        //memset(rx_buffer_, '\0', SOCKET_SIZE);
         host_ = host;
         port_ = port;
-        receive_thread_ = false;
+        socket_thread_is_running_ = false;
         send_thread_queue_ = new std::queue<std::thread::id>;
+        receive_thread_id_ = nullptr;
     }
 
     SocketCommunication::~SocketCommunication() {
@@ -75,7 +78,6 @@ namespace socket_communication {
         callback_function_list_.clear();
         signal_function_list_.clear();
         delete send_thread_queue_;
-        Close();
     }
 
     void SocketCommunication::Call(const uint8_t *buffer, uint8_t header) {
@@ -109,78 +111,14 @@ namespace socket_communication {
         return StartSocketReceiveThread(host_, port_);
     }
 
-    bool SocketCommunication::StartSocketReceiveThread(const std::string &host, uint16_t port) {
-        port_ = port;
-        host_ = host;
-        return StartSocketReceiveThread(host_, port_, this);;
+    bool SocketCommunication::Connect() {
+        return Connect(host_, port_);
     }
 
-    bool SocketCommunication::StartSocketReceiveThread(const std::string &host, uint16_t port, void *__this) {
-        auto *_this = (SocketCommunication *) __this;
-        if (!_this->is_open_) {
-            return false;
-        }
-        if (_this->receive_thread_) {
-            CloseSocketReceiveThread();
-        }
-        _this->socket_thread_ = true;
-        receive_id_ = new pthread_t;
-        pthread_create(receive_id_, nullptr, SocketReceive, (void *) this);
-        _this->port_ = port;
-        _this->host_ = host;
-        return true;
-    }
-
-    bool SocketCommunication::Open() {
-        return Open(host_, port_);
-    }
-
-
-    bool SocketCommunication::Open(const std::string &host, uint16_t port) {
+    bool SocketCommunication::Connect(const std::string &host, uint16_t port) {
         host_ = host;
         port_ = port;
-        if (is_open_) {
-            Close();
-        }
-        client_socket_ptr_ = new int;
-        *client_socket_ptr_ = socket(AF_INET, SOCK_STREAM, 0);
-        if (*client_socket_ptr_ == -1) {
-            delete client_socket_ptr_;
-            client_socket_ptr_ = nullptr;
-            std::cerr << "Start socket error" << std::endl;
-            return false;
-        }
-        struct sockaddr_in addr;
-        memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port_);
-        addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        struct hostent *h_ptr = gethostbyname(host_.c_str());
-        if (h_ptr == nullptr) {
-            std::cerr << "Host name error" << std::endl;
-            return false;
-        }
-        addr.sin_addr.s_addr = *((unsigned long *) h_ptr->h_addr_list[0]);
-        //inet_aton(_this->host_.c_str(), &(addr.sin_addr));
-        int addrlen = sizeof(addr);
-        int32_t bReuseaddr = 1;
-        setsockopt(*client_socket_ptr_, SOL_SOCKET, SO_REUSEADDR, (const char *) &bReuseaddr, sizeof(int32_t));
-
-        int listen_socket = connect(*client_socket_ptr_, (struct sockaddr *) &addr, addrlen);
-        if (listen_socket == -1) {
-            //LOG(ERROR)<<"connect "<<host_<<":"<<port_<<" error";
-            delete client_socket_ptr_;
-            client_socket_ptr_ = nullptr;
-            std::cerr << "connect " << host_ << ":" << port_ << " error" << std::endl;
-            return false;
-        }
-        struct timeval timeout = {0, 5000};
-        int ret = setsockopt(*client_socket_ptr_, SOL_SOCKET, SO_RCVTIMEO, (const char *) &timeout, sizeof(timeout));
-        if (ret == -1) {
-            std::cerr << "Failed to set socket timeout" << std::endl;
-        }
-        is_open_ = true;
-        return true;
+        return NewConnect() && StartSocketReceiveThread();
     }
 
     void SocketCommunication::SetHost(const std::string &host) {
@@ -192,33 +130,52 @@ namespace socket_communication {
     }
 
     bool SocketCommunication::IsOpen() {
-        return is_open_;
+        return is_connected_;
     }
 
-    void *SocketCommunication::SocketReceive(void *__this) {
-        auto *_this = (SocketCommunication *) __this;
-        _this->receive_thread_ = true;
+    void SocketCommunication::Receive() {
+        auto *_this = (SocketCommunication*) this;
+        //is_connected_ = true;
+        _this->socket_thread_is_running_ = true;
         int socket_closed = 0;
+        uint8_t* rx_buffer;
+        rx_buffer = new uint8_t[SOCKET_SIZE];
         while (_this->socket_thread_) {
-            memset(_this->rx_buffer_, '\0', SOCKET_SIZE);
+            memset(rx_buffer, '\0', SOCKET_SIZE);
             char temp;
-            temp = read(*_this->client_socket_ptr_, _this->rx_buffer_, SOCKET_SIZE - 1);
+            temp = read(_this->socket_, rx_buffer, SOCKET_SIZE - 1);
             if (temp == 0) {
-                std::cerr << "Socket closed" << std::endl;
+                std::cerr << "[socket] Socket closed" << std::endl;
                 socket_closed = 1;
                 break;
             }
             if (temp > 0) {
-                _this->CallFunction(_this->rx_buffer_, (void *) _this);
+                _this->CallFunction(rx_buffer, (void *) _this);
             }
         }
         if (socket_closed == 1 && _this->socket_thread_) {
             _this->SignalCall(kSocketClose);
             _this->SignalCall(kSocketAbnormalDisconnection);
-            _this->is_open_ = false;
+            _this->is_connected_ = false;
         }
-        _this->receive_thread_ = false;
-        pthread_exit(NULL);
+        _this->socket_thread_is_running_ = false;
+        delete[]rx_buffer;
+    }
+
+    void SocketCommunication::CloseSocketThread() {
+        void *status;
+        if (socket_thread_) {
+            socket_thread_ = false;
+            socket_thread_is_running_ = false;
+            pthread_join(*receive_thread_id_, &status);
+            delete receive_thread_id_;
+        }
+    }
+
+    void *SocketCommunication::SocketReceive(void *__this) {
+        auto *_this = (SocketCommunication*) __this;
+        _this->Receive();
+        pthread_exit(nullptr);
         return nullptr;
     }
 
@@ -228,28 +185,6 @@ namespace socket_communication {
 
     bool SocketCommunication::OfflineReconnection() {
         return offline_reconnection_;
-    }
-
-    void SocketCommunication::CloseSocketReceiveThread() {
-        void *status;
-        int rc;
-        if (socket_thread_) {
-            socket_thread_ = false;
-            rc = pthread_join(*receive_id_, &status);
-            delete receive_id_;
-        }
-    }
-
-    void SocketCommunication::Close() {
-        socket_thread_ = false;
-        CloseSocketReceiveThread();
-        if (is_open_) {
-            shutdown(*client_socket_ptr_, SHUT_RDWR);
-            delete client_socket_ptr_;
-            client_socket_ptr_ = nullptr;
-            SignalCall(kSocketClose);
-        }
-        is_open_ = false;
     }
 
     void SocketCommunication::RemoveCallBackFunction(uint8_t header) {
@@ -307,5 +242,182 @@ namespace socket_communication {
     template<typename T>
     SocketCommunication &operator<<(SocketCommunication &sock, const T &data) {
         return sock;
+    }
+
+    void SocketCommunication::Close() {
+        CloseSocketThread();
+        if (is_connected_) {
+            shutdown(socket_, SHUT_RDWR);
+            SignalCall(kSocketClose);
+        }
+        is_connected_ = false;
+    }
+
+    SocketCommunicationServer::SocketCommunicationServer() {
+        max_clients_num = 1;
+        is_listening_ = false;
+        listen_socket_ = 0;
+
+        debug_name_ = "server";
+    }
+
+    SocketCommunicationServer::SocketCommunicationServer(const std::string &host, uint16_t port) : SocketCommunication(
+            host, port) {
+        max_clients_num = 1;
+        is_listening_ = false;
+        listen_socket_ = 0;
+    }
+
+    bool SocketCommunicationServer::NewConnect() {
+        if (is_connected_) {
+            Close();
+        }
+        listen_socket_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (listen_socket_ == -1) {
+            std::cerr << "[server] Create socket error" << std::endl;
+            return false;
+        }
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port_);
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        struct hostent *h_ptr = gethostbyname(host_.c_str());
+        if (h_ptr == nullptr) {
+            std::cerr << "[server] Host name error" << std::endl;
+            return false;
+        }
+        addr.sin_addr.s_addr = *((unsigned long *) h_ptr->h_addr_list[0]);
+        //inet_aton(_this->host_.c_str(), &(addr.sin_addr));
+        //int addrlen = sizeof(addr);
+        int32_t bReuseaddr = 1;
+        setsockopt(listen_socket_, SOL_SOCKET, SO_REUSEADDR, (const char *) &bReuseaddr, sizeof(int32_t));
+        bind(listen_socket_, (struct sockaddr*)&addr, sizeof(addr));
+        int res = listen(listen_socket_, max_clients_num);
+        if (res == -1) {
+            std::cerr << "[server] Listen " << host_ << ":" << port_ << " error" << std::endl;
+            return false;
+        }
+        struct timeval timeout = {0, 5000};
+        int ret = setsockopt(listen_socket_, SOL_SOCKET, SO_RCVTIMEO, (const char *) &timeout, sizeof(timeout));
+        if (ret == -1) {
+            std::cerr << "[server] Failed to set socket timeout" << std::endl;
+        }
+        is_listening_ = true;
+        return true;
+    }
+
+    void *SocketCommunicationServer::SocketAccept(void *__this) {
+        auto _this = (SocketCommunicationServer*)__this;
+        _this->socket_thread_ = true;
+        while(_this->socket_thread_) {
+            struct sockaddr_in clnt_addr;
+            socklen_t clnt_addr_size = sizeof(clnt_addr);
+            struct timeval timeout = {1, 5000};
+            int ret = setsockopt(_this->listen_socket_, SOL_SOCKET, SO_RCVTIMEO, (const char *) &timeout, sizeof(timeout));
+            if (ret == -1) {
+                std::cerr << "[server] Failed to set socket timeout" << std::endl;
+            }
+            _this->socket_ = accept(_this->listen_socket_, (struct sockaddr*)&clnt_addr, &clnt_addr_size);
+            if(_this->socket_ == -1){
+                continue;
+            }
+            std::cout<<"[server] Accept a new connect"<<std::endl;
+            _this->is_connected_ = true;
+            _this->Receive();
+        }
+        _this->socket_thread_is_running_  = false;
+        //std::cout<<"[server] Close"<<std::endl;
+        return nullptr;
+    }
+
+    bool SocketCommunicationServer::StartSocketReceiveThread(const std::string &host, uint16_t port) {
+        if (!is_listening_) {
+            return false;
+        }
+        if (socket_thread_is_running_) {
+            CloseSocketThread();
+        }
+        socket_thread_ = true;
+        //pthread_t* receive_thread_id_;
+        receive_thread_id_ = new pthread_t;
+        pthread_create(receive_thread_id_, nullptr, SocketAccept, (void *) this);
+        //receive_id_vector_.push_back(receive_thread_id_);
+        port_ = port;
+        host_ = host;
+        return true;
+    }
+
+
+    SocketCommunicationServer::~SocketCommunicationServer() {
+        Close();
+    }
+
+    SocketCommunicationClient::SocketCommunicationClient() {
+        debug_name_ = "client";
+    }
+
+    SocketCommunicationClient::SocketCommunicationClient(const std::string &host, uint16_t port) : SocketCommunication(
+            host, port) {
+
+    }
+
+    bool SocketCommunicationClient::NewConnect() {
+        if (is_connected_) {
+            Close();
+        }
+        socket_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (socket_ == -1) {
+            std::cerr << "[socket] Create socket error" << std::endl;
+            return false;
+        }
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port_);
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        struct hostent *h_ptr = gethostbyname(host_.c_str());
+        if (h_ptr == nullptr) {
+            std::cerr << "[client] Host name error" << std::endl;
+            return false;
+        }
+        addr.sin_addr.s_addr = *((unsigned long *) h_ptr->h_addr_list[0]);
+        //inet_aton(_this->host_.c_str(), &(addr.sin_addr));
+        int addrlen = sizeof(addr);
+        int32_t bReuseaddr = 1;
+        setsockopt(socket_, SOL_SOCKET, SO_REUSEADDR, (const char *) &bReuseaddr, sizeof(int32_t));
+
+        int listen_socket = connect(socket_, (struct sockaddr *) &addr, addrlen);
+        if (listen_socket == -1) {
+            //LOG(ERROR)<<"connect "<<host_<<":"<<port_<<" error";
+            std::cerr << "[client] Connect " << host_ << ":" << port_ << " error" << std::endl;
+            return false;
+        }
+        struct timeval timeout = {0, 5000};
+        int ret = setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, (const char *) &timeout, sizeof(timeout));
+        if (ret == -1) {
+            std::cerr << "[client] Failed to set socket timeout" << std::endl;
+        }
+        is_connected_ = true;
+        return true;
+    }
+
+    bool SocketCommunicationClient::StartSocketReceiveThread(const std::string &host, uint16_t port) {
+        if (!is_connected_) {
+            return false;
+        }
+        if (socket_thread_is_running_) {
+            CloseSocketThread();
+        }
+        socket_thread_ = true;
+        receive_thread_id_ = new pthread_t;
+        pthread_create(receive_thread_id_, nullptr, SocketReceive, (void *) this);
+        port_ = port;
+        host_ = host;
+        return true;
+    }
+
+    SocketCommunicationClient::~SocketCommunicationClient() {
+        Close();
     }
 }

@@ -48,6 +48,7 @@ typedef struct TestMsg{
 最终发出数据为：
 ```json
 {
+    "socket_header": 1,
 	"data": "{\"a\":15,\"b\":2}",
 	"header": 1,
 	"time_stamp": 1568082111190
@@ -74,7 +75,12 @@ void test_callback2(const TestMsg* data){
 callback_function.h定义对象CallBackFunction， CallBackFunction继承自CallBackFunctionInterface, 实现了对回调函数的封装
 
 #### ROS风格的发送
-可以像在ROS中一样创建一个发布者，来发布消息
+可以像在ROS中一样创建一个发布者，来发布消息, 这种方式是异步发送
+
+```cpp
+socket_communication::Publisher<TestMsg> pub(&s, 1);
+pub.publish(b);
+```
 
 ### 示例
 ```cpp
@@ -96,20 +102,23 @@ typedef struct TestMsg {
 } TestMsg;
 
 void test_callback(const TestMsg *data, TestMsg arg) {
-    std::cout << "callback a: " << data->a << " b: " << data->b << std::endl;
-    std::cout << "args a: " << arg.a << std::endl;
+    std::cout << "[callback] callback a: " << data->a << " b: " << data->b << " args a: " << arg.a << std::endl;
 }
 
 void test_callback2(const TestMsg *data) {
-    std::cout << "callback2 a: " << data->a << " b: " << data->b << std::endl;
+    std::cout << "[callback] callback2 a: " << data->a << " b: " << data->b << std::endl;
 }
 
-void test_disconnect_callback(int args) {
-    std::cout << "disconnect callback arg: " << args << std::endl;
+void test_client_disconnect_callback(int args) {
+    std::cout << "[callback] client socket abnormal close, arg: " << args << std::endl;
 }
 
-void test_close_callback() {
-    std::cout << "close callback" << std::endl;
+void test_client_close_callback() {
+    std::cout << "[callback] client socket close" << std::endl;
+}
+
+void test_server_close_callback() {
+    std::cout << "[callback] server socket close" << std::endl;
 }
 
 void to_json(json &j, const TestMsg &socketTransmission) {
@@ -131,44 +140,54 @@ int main(int argc, char *argv[]) {
     b.a = 3;
     b.b = 3;
     int arg1 = 2;
-    socket_communication::SocketCommunication s;
+    socket_communication::SocketCommunicationClient client;
+    socket_communication::SocketCommunicationServer server;
+
     ///设置数据头1的回调函数
-    s.SetCallBackFunction < void(
+    client.SetCallBackFunction < void(
     const TestMsg*, TestMsg), TestMsg > (test_callback, kTestMsg, arg);
-    s.SetCallBackFunction < void(
+    client.SetCallBackFunction < void(
     const TestMsg*),TestMsg > (test_callback2, kTestMsg);
 
     ///设置异常断开的回调函数
-    s.SetSignalCallBackFunction<void(int)>(test_disconnect_callback, socket_communication::kSocketAbnormalDisconnection,
-                                           arg1);
+    client.SetSignalCallBackFunction<void(int)>(test_client_disconnect_callback, socket_communication::kSocketAbnormalDisconnection,
+                                                arg1);
 
-    ///设置Socket断开的回调函数
-    s.SetSignalCallBackFunction<void()>(test_close_callback, socket_communication::kSocketClose);
+    ///设置Socket正常断开的回调函数
+    client.SetSignalCallBackFunction<void()>(test_client_close_callback, socket_communication::kSocketClose);
+    server.SetCallBackFunction < void(
+    const TestMsg*, TestMsg), TestMsg > (test_callback, kTestMsg, arg);
+    server.SetSignalCallBackFunction<void()>(test_server_close_callback, socket_communication::kSocketClose);
+    if(!server.Connect("127.0.0.1", 9008)){
+        return -2;
+    }
 
     ///连接
-    if (!s.Open("127.0.0.1", 9009)) {
+    if (!client.Connect("127.0.0.1", 9008)) {
         return -1;
     }
 
-    ///开启接收线程
-    s.StartSocketReceiveThread();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    /// client断开
+    client.Close();
+    client.Connect();
 
     ///发送数据 a，数据头 1
-    s.SendData(a, 1);
-    //std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    client.SendData(a, 1);
+
     /// 或者使用ROS风格的发送者来发送数据
-    socket_communication::Publisher<TestMsg> pub(&s, 1);
+    socket_communication::Publisher<TestMsg> pub(&client, 1);
     for (int i = 0; i < 3; ++i) {
         pub.publish(b);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    ///关闭接收线程
-    s.CloseSocketReceiveThread();
 
     ///关闭socket
-    s.Close();
+    server.Close();
+    //client.Close();
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     return 0;
 }
 ```
@@ -186,22 +205,21 @@ make
 运行
 
 ```
-python test.py
 build/./test
 ```
 
 结果如下， 数据打印不正常是由于异步回调，多线程同时打印
 
-	callback a: callback2 a: 2 b: 22 b: 2
-    args a: 1
-    
-    callback2 a: callback a: 33 b: 3 b: 
-    args a: 1
-    3
-    callback a: 3 b: 3
-    args a: 1
-    callback2 a: 3 b: 3
-    callback a: 3 b: 3
-    args a: 1
-    callback2 a: 3 b: 3
-    close callback
+	[server] Accept a new connect
+    [callback] client socket close
+    [socket] Socket closed
+    [callback] server socket close
+    [server] Accept a new connect
+    [callback] callback a: 2 b: 2 args a: 1
+    [callback] callback a: 3 b: 3 args a: 1
+    [callback] callback a: 3 b: 3 args a: 1
+    [callback] callback a: 3 b: 3 args a: 1
+    [socket] Socket closed
+    [callback] server socket close
+    [callback] client socket close
+    [callback] client socket abnormal close, arg: 2

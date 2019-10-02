@@ -125,6 +125,11 @@ class SocketException:public std::exception{
         enum SocketHeader{
             kData = 1
         };
+        enum TCPType{
+            kClient = 1,
+            kServer = 2
+        };
+
     public:
         SocketCommunication();
 
@@ -154,29 +159,6 @@ class SocketException:public std::exception{
         void SetSignalCallBackFunction(callable &&fun, SocketSignal socket_signal, A &&... arg);
 
         static void *SocketReceive(void *__this);
-
-        /**
-         开启接收线程
-
-         @return true:成功，否则失败
-        */
-        bool StartSocketReceiveThread();
-
-        /**
-         开启接收线程
-         @param host:域名或地址
-         @param port:端口
-         @return true:成功，否则失败
-        */
-        bool StartSocketReceiveThread(const std::string &host, uint16_t port);
-
-        bool StartSocketReceiveThread(const std::string &host, uint16_t port, void *__this);
-
-        /**
-         关闭接收线程
-         @return
-        */
-        void CloseSocketReceiveThread();
 
         /**
          移除回调函数
@@ -229,33 +211,59 @@ class SocketException:public std::exception{
         连接
         @return true：连接成功
        */
-        bool Open();
+        bool Connect();
 
-        bool Open(const std::string &host, uint16_t port);
+        bool Connect(const std::string &host, uint16_t port);
 
         /**
         关闭串口
        */
         void Close();
 
+    protected:
+        virtual bool NewConnect() = 0;
+        /**
+        关闭接收线程
+        @return
+       */
+        void Receive();
+        void SignalCall(SocketSignal socketSignal);
+        void CloseSocketThread();
+
+        std::string host_;
+        uint16_t port_;
+        int socket_;
+        volatile bool is_connected_;
+        volatile bool socket_thread_is_running_;
+        volatile bool socket_thread_;
+        pthread_t* receive_thread_id_;
+
+        std::string debug_name_;
+
     private:
+        /**
+        开启接收线程
+
+        @return true:成功，否则失败
+       */
+        bool StartSocketReceiveThread();
+
+        /**
+         开启接收线程
+         @param host:域名或地址
+         @param port:端口
+         @return true:成功，否则失败
+        */
+        virtual bool StartSocketReceiveThread(const std::string &host, uint16_t port) = 0;
+
+//        bool StartSocketReceiveThread(const std::string &host, uint16_t port, void *__this);
         void CallFunction(uint8_t *data, void *__this);
 
         void Call(const uint8_t *buffer, uint8_t header);
 
-        void SignalCall(SocketSignal socketSignal);
-
-        volatile bool socket_thread_;
         volatile bool is_sending_;
-
-        pthread_t *receive_id_;
-        int *client_socket_ptr_;
-        std::string host_;
-        uint16_t port_;
-        volatile bool is_open_;
+        //pthread_t *receive_thread_id_;
         volatile bool offline_reconnection_;
-        volatile bool receive_thread_;
-        uint8_t rx_buffer_[SOCKET_SIZE];
         std::map<uint8_t, std::vector<CallbackPair<std::string> *>> callback_function_list_;
         std::map<SocketSignal, std::vector<CallbackPair<> *>> signal_function_list_;
         std::queue<std::thread::id> *send_thread_queue_;
@@ -290,7 +298,7 @@ class SocketException:public std::exception{
 
     template<typename T>
     inline void SocketCommunication::SendData(const T &data, uint8_t header) {
-        if (is_open_) {
+        if (is_connected_) {
             json j = data;
             std::string string_data;
             std::string string_send;
@@ -313,7 +321,7 @@ class SocketException:public std::exception{
             }
             is_sending_ = true;
             char temp;
-            temp = write(*client_socket_ptr_, str_send, strlen((const char *) str_send));
+            temp = write(socket_, str_send, strlen((const char *) str_send));
             //std::this_thread::sleep_for(std::chrono::microseconds(1));
             is_sending_ = false;
             send_thread_queue_->pop();
@@ -322,6 +330,37 @@ class SocketException:public std::exception{
         }
     };
 
+    class SocketCommunicationClient:public SocketCommunication {
+    public:
+        SocketCommunicationClient();
+        SocketCommunicationClient(const std::string& host, uint16_t port);
+        ~SocketCommunicationClient();
+        //void Close() override ;
+    protected:
+        bool NewConnect() override;
+        bool StartSocketReceiveThread(const std::string &host, uint16_t port) override;
+
+    private:
+        //void CloseSocketReceiveThread();
+    };
+
+    class SocketCommunicationServer:public SocketCommunication {
+    public:
+        SocketCommunicationServer();
+        SocketCommunicationServer(const std::string& host, uint16_t port);
+        ~SocketCommunicationServer();
+        static void *SocketAccept(void *__this);
+        //void Close() override ;
+
+    private:
+        bool NewConnect() override;
+        bool StartSocketReceiveThread(const std::string &host, uint16_t port) override;
+        //void CloseListenThread();
+
+        bool is_listening_;
+        uint16_t max_clients_num;
+        int listen_socket_;
+    };
 }
 
 
